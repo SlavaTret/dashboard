@@ -1,0 +1,1 @@
+window.SupabaseApp=window.SupabaseApp||{},function(p){const a={URL:"https://izugqcbdlpttsmpvbfkc.supabase.co",KEY:"sb_publishable_zLphTUg2K_vE9nNBc_tx7g_Twfh5LRi"},s=supabase.createClient(a.URL,a.KEY,{global:{headers:{apikey:a.KEY}}});p.SupabaseApp.config=a,p.SupabaseApp.supabaseClient=s,window.supabaseClient=s,window.SUPABASE_CONFIG=a}(window);
