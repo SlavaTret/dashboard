@@ -30,6 +30,34 @@ const dashboardState = {
 };
 
 // ========================================================================= //
+// КЕШ + СКЕЛЕТОНИ
+// ========================================================================= //
+const CACHE_TTL = 5 * 60 * 1000; // 5 хвилин
+
+function cacheGet(key) {
+    try {
+        const raw = localStorage.getItem('dash_' + key);
+        if (!raw) return null;
+        const { d, t } = JSON.parse(raw);
+        if (Date.now() - t > CACHE_TTL) { localStorage.removeItem('dash_' + key); return null; }
+        return d;
+    } catch { return null; }
+}
+
+function cacheSet(key, data) {
+    try { localStorage.setItem('dash_' + key, JSON.stringify({ d: data, t: Date.now() })); } catch {}
+}
+
+function ck(name, pids, start, end) {
+    return `${name}_${pids ? pids.join('-') : 'adm'}_${start}_${end}`;
+}
+
+function skeletonRows(cols, rows = 6) {
+    const cell = `<td><div class="skeleton-line"></div></td>`.repeat(cols);
+    return `<tr>${cell}</tr>`.repeat(rows);
+}
+
+// ========================================================================= //
 // 1. ДОПОМІЖНІ ФУНКЦІЇ 
 // ========================================================================= //
 
@@ -189,8 +217,10 @@ async function updateSalesStats() {
 
         if (pids) {
             // Промоутер: витягуємо всі замовлення і групуємо по seller_id
-            const currData = await fetchAllOrders(pids, start, end, 'tickets_count, subtotal_amount, seller_id');
-            const prevData = await fetchAllOrders(pids, prevStart, prevEnd, 'tickets_count, subtotal_amount, seller_id');
+            const [currData, prevData] = await Promise.all([
+                fetchAllOrders(pids, start, end, 'tickets_count, subtotal_amount, seller_id'),
+                fetchAllOrders(pids, prevStart, prevEnd, 'tickets_count, subtotal_amount, seller_id')
+            ]);
 
             const groupRawOrders = (data) => (data || []).reduce((acc, row) => {
                 const rev = parseFloat(row.subtotal_amount) || 0;
@@ -530,19 +560,9 @@ async function updateOrdersTable() {
         const { start, end } = getDateRange();
         const tbody = dashboardState.domElements.ordersTableBody = dashboardState.domElements.ordersTableBody || document.getElementById('orders-table-body');
         if (!tbody) return;
-        
-        let query = supabaseClient.from('orders')
-            .select('*')
-            .gte('visit_date', start)
-            .lte('visit_date', end)
-            .order('date_created', { ascending: false })
-            .limit(10);
-            
-        const pids = getPromoterIds();
-        if (pids) query = query.in('promoterId', pids);
 
-        const { data, error } = await query;
-        if (error) throw error;
+        const pids = getPromoterIds();
+        const key = ck('orders_tbl', pids, start, end);
 
         const getSellerName = (sellerId) => {
             const id = Number(sellerId);
@@ -550,14 +570,39 @@ async function updateOrdersTable() {
             if (id === window.SELLER_IDS.KARABAS) return '<span class="badge text-warning border">Karabas</span>';
             if (id === window.SELLER_IDS.MTICKET) return '<span class="badge text-info border">MTicket</span>';
             if (id === window.SELLER_IDS.INTERNET_BILET) return '<span class="badge text-primary border">Internet-Bilet</span>';
-            return '<span class="badge text-secondary border">Інший продавець</span>'; // Загальний fallback
+            return '<span class="badge text-secondary border">Інший продавець</span>';
         };
 
-        tbody.innerHTML = (data || []).map(order => {
-            const sellerName = getSellerName(order.seller_id);
-            const dateConfirm = order.date_confirmed ? new Date(order.date_confirmed).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '---';
-            return `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${order.title}</span></td><td>${order.order_id}</td><td class="fw-bold">${parseFloat(order.subtotal_amount).toLocaleString('uk-UA')} ₴</td><td>${order.tickets_count} шт.</td><td class="small">${sellerName}</td> <td>${dateConfirm}</td></tr>`;
-        }).join('');
+        const renderOrders = (data) => {
+            tbody.innerHTML = (data || []).map(order => {
+                const sellerName = getSellerName(order.seller_id);
+                const dateConfirm = order.date_confirmed ? new Date(order.date_confirmed).toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '---';
+                return `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${order.title}</span></td><td>${order.order_id}</td><td class="fw-bold">${parseFloat(order.subtotal_amount).toLocaleString('uk-UA')} ₴</td><td>${order.tickets_count} шт.</td><td class="small">${sellerName}</td><td>${dateConfirm}</td></tr>`;
+            }).join('');
+        };
+
+        const fetchOrders = async () => {
+            let q = supabaseClient.from('orders').select('*').gte('visit_date', start).lte('visit_date', end).order('date_created', { ascending: false }).limit(25);
+            if (pids) q = q.in('promoterId', pids);
+            const { data, error } = await q;
+            if (error) throw error;
+            return data;
+        };
+
+        // Показати скелетон поки нема даних
+        tbody.innerHTML = skeletonRows(6, 8);
+
+        const cached = cacheGet(key);
+        if (cached) {
+            renderOrders(cached);
+            // Тихе оновлення у фоні
+            fetchOrders().then(fresh => { cacheSet(key, fresh); renderOrders(fresh); }).catch(() => {});
+            return;
+        }
+
+        const data = await fetchOrders();
+        cacheSet(key, data);
+        renderOrders(data);
     } catch (err) { console.error(err); }
 }
 
@@ -712,23 +757,42 @@ async function updateTopEventsTable() {
         if (!tbody) return;
 
         const pids = getPromoterIds();
-        
-        // ФІКС: Тепер і адмін, і промоутер використовують пагінацію, щоб не впиратися в ліміт 1000 подій
+        const key = ck('top_events', pids, start, end);
+
+        const processData = (data) => {
+            const eventsMap = (data || []).reduce((acc, order) => {
+                const name = order.title ? order.title.trim() : 'Невідома подія';
+                if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0 };
+                acc[name].tickets += parseInt(order.tickets_count) || 0;
+                acc[name].totalRevenue += parseFloat(order.subtotal_amount) || 0;
+                return acc;
+            }, {});
+            return Object.entries(eventsMap).map(([title, stats]) => ({ title, ...stats })).sort((a, b) => b.tickets - a.tickets).slice(0, 25);
+        };
+
+        const renderTopEvents = (topEvents) => {
+            tbody.innerHTML = topEvents.map(event => `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${event.title}</span></td><td>${event.tickets} шт.</td><td class="fw-bold">${event.totalRevenue.toLocaleString('uk-UA')} ₴</td></tr>`).join('');
+        };
+
+        // Показати скелетон поки нема даних
+        tbody.innerHTML = skeletonRows(3, 8);
+
+        const cached = cacheGet(key);
+        if (cached) {
+            renderTopEvents(cached);
+            // Тихе оновлення у фоні
+            fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count').then(fresh => {
+                const topEvents = processData(fresh);
+                cacheSet(key, topEvents);
+                renderTopEvents(topEvents);
+            }).catch(() => {});
+            return;
+        }
+
         const data = await fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count');
-
-        const eventsMap = (data || []).reduce((acc, order) => {
-            const name = order.title ? order.title.trim() : 'Невідома подія';
-            if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0 };
-            
-            // В таблиці заходів ми все ще чесно рахуємо квитки, бо там стоїть "шт."
-            acc[name].tickets += parseInt(order.tickets_count) || 0;
-            acc[name].totalRevenue += parseFloat(order.subtotal_amount) || 0;
-            return acc;
-        }, {});
-
-        const topEvents = Object.entries(eventsMap).map(([title, stats]) => ({ title, ...stats })).sort((a, b) => b.tickets - a.tickets).slice(0, 10);
-
-        tbody.innerHTML = topEvents.map(event => `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${event.title}</span></td><td>${event.tickets} шт.</td><td class="fw-bold">${event.totalRevenue.toLocaleString('uk-UA')} ₴</td></tr>`).join('');
+        const topEvents = processData(data);
+        cacheSet(key, topEvents);
+        renderTopEvents(topEvents);
     } catch (err) { console.error("❌ Помилка завантаження топу подій:", err); }
 }
 

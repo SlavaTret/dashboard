@@ -134,7 +134,8 @@ function watchTask() {
 
 // --- Експорт тасків ---
 exports.build = series(
-  cleanDist, 
+  cleanDist,
+  scss,
   parallel(html, scripts, mainJs, images, maps, fonts, vendorJs, copyLibs)
 );
 
