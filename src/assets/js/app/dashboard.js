@@ -610,7 +610,7 @@ function renderUkraineMap(dbData) {
 
     const chartData = Object.entries(dbData).map(([code, info]) => ({ name: code, value: info.value, uaName: info.uaName }));
 
-    fetch('/assets/maps/ua-all.geo.json')
+    fetch('assets/maps/ua-all.geo.json')
         .then(res => res.json())
         .then(geoJson => {
             echarts.registerMap('UKRAINE', geoJson);

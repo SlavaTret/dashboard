@@ -101,6 +101,9 @@ function html() {
     .pipe(fileinclude({ prefix: '@@', basepath: '@file' }))
     .pipe(replace(/src="(.{0,10})node_modules/g, 'src="$1assets/libs'))
     .pipe(replace(/href="(.{0,10})node_modules/g, 'href="$1assets/libs'))
+    .pipe(replace(/src="\/assets\//g, 'src="assets/'))
+    .pipe(replace(/href="\/assets\//g, 'href="assets/'))
+    .pipe(replace(/href="\/index\.html/g, 'href="index.html'))
     .pipe(useref({ searchPath: ['src', '.'] }))
     // ПРИБРАНО cached() для білду, щоб завжди бачити зміни
     .pipe(gulpIf('*.css', postcss([autoprefixer(), cssnano()])))

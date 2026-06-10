@@ -1,49 +1,31 @@
-name: prod-deploy
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run Gulp build
-        run: npx gulp build 
+      - name: Build
+        run: npm run build
 
-      - name: Deploy to VPS via rsync
-        uses: Burnett01/rsync-deployments@7.0.1
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          switches: -avzr --delete
-          path: ./dist/
-          remote_path: /root/my_files/dashboard/dasher-1.0.0
-          remote_host: 81.17.100.94
-          remote_user: root
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          remote_key_pass: ${{ secrets.SSH_PASSPHRASE }}
-
-      - name: Post-deploy confirmation
-        uses: appleboy/ssh-action@master
-        with:
-          host: 81.17.100.94
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            echo "🚀 Деплой у /root/my_files/dashboard/dasher-1.0.1 завершено успішно!"
-            # Тут можна додати команду для перезапуску nginx:
-            # systemctl reload nginx
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
