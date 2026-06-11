@@ -125,7 +125,7 @@ function cleanDist(done) {
 // Watch Task
 function watchTask() {
   browsersync.init({
-    server: { baseDir: [paths.src.basesrc, './'] },
+    server: { baseDir: [paths.dist.basedist, './'] },
   });
   watch(paths.src.html, series(html, browsersync.reload));
   watch(paths.src.scss, series(scss, browsersync.reload));

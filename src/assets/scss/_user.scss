@@ -17,17 +17,20 @@
   animation: skeleton-shimmer 1.4s ease infinite;
 }
 
+// Sidebar hidden — remove left margin/offset from content and header
+#miniSidebar { display: none !important; }
+#content { margin-left: 0 !important; }
+.navbar-glass { width: 100% !important; left: 0 !important; }
+
 // Scrollable table body
 .table-scroll-wrapper {
-  max-height: 420px;
   overflow-y: auto;
-  overflow-x: hidden;
 
   thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background-color: var(--bs-card-bg, #1c2434);
+    background-color: var(--ds-gray-100);
   }
 
   // Custom scrollbar

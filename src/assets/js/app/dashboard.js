@@ -1080,6 +1080,7 @@ async function initDashboard() {
         if (!p || p.funnel) tasks.push(updateConversionFunnelChart());
 
         await Promise.all(tasks);
+        syncTableHeights();
         console.log("✅ Дашборд успішно оновлено");
     } catch (err) { 
         console.error("❌ Критична помилка ініціалізації:", err); 
@@ -1150,6 +1151,34 @@ async function authenticateAndInit() {
     initDashboard();
     subscribeToOrders();
 
+}
+
+function syncTableHeights() {
+    // Остані замовлення: показати рівно 11 рядків
+    const ordersWrapper = document.querySelector('#block-recent-orders .table-scroll-wrapper');
+    if (ordersWrapper) {
+        const thead = ordersWrapper.querySelector('thead');
+        const rows  = ordersWrapper.querySelectorAll('tbody tr');
+        if (rows.length > 0) {
+            let h = thead ? thead.offsetHeight : 0;
+            const count = Math.min(11, rows.length);
+            for (let i = 0; i < count; i++) h += rows[i].offsetHeight;
+            ordersWrapper.style.maxHeight = h + 'px';
+        }
+    }
+
+    // Топ заходи: показати рівно 8 рядків
+    const topWrapper = document.querySelector('#block-top-events .table-scroll-wrapper');
+    if (topWrapper) {
+        const thead = topWrapper.querySelector('thead');
+        const rows  = topWrapper.querySelectorAll('tbody tr');
+        if (rows.length > 0) {
+            let h = thead ? thead.offsetHeight : 0;
+            const count = Math.min(8, rows.length);
+            for (let i = 0; i < count; i++) h += rows[i].offsetHeight;
+            topWrapper.style.maxHeight = h + 'px';
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', authenticateAndInit);
