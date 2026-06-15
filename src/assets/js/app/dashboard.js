@@ -276,7 +276,7 @@ async function updateSalesStats() {
                     acc.mticket.orders += orders; acc.mticket.revenue += revenue;
                 } else if (type === 'internet_bilet') {
                     acc.internet_bilet.orders += orders; acc.internet_bilet.revenue += revenue;
-                } else if (type === 'others') {
+                } else {
                     acc.others.orders += orders; acc.others.revenue += revenue;
                 }
                 return acc;
@@ -296,17 +296,12 @@ async function updateSalesStats() {
         dashboardState.domElements.revenuePortal = dashboardState.domElements.revenuePortal || document.getElementById('revenue-portal');
         dashboardState.domElements.revenueGa = dashboardState.domElements.revenueGa || document.getElementById('revenue-ga');
 
-        const totalOrders  = currP.numotamo.orders  + currP.karabas.orders  + currP.mticket.orders  + currP.internet_bilet.orders  + currP.others.orders;
-        const totalRevenue = currP.numotamo.revenue + currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue;
-        const prevTotalOrders  = prevP.numotamo.orders  + prevP.karabas.orders  + prevP.mticket.orders  + prevP.internet_bilet.orders  + prevP.others.orders;
-        const prevTotalRevenue = prevP.numotamo.revenue + prevP.karabas.revenue + prevP.mticket.revenue + prevP.internet_bilet.revenue + prevP.others.revenue;
-
-        animateCount(dashboardState.domElements.totalOrders, totalOrders);
-        updateTrendBadge('orders-trend', totalOrders, prevTotalOrders);
+        animateCount(dashboardState.domElements.totalOrders, currP.all.orders);
+        updateTrendBadge('orders-trend', currP.all.orders, prevP.all.orders);
         animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders);
         animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders);
-        animateCount(dashboardState.domElements.totalRevenue, totalRevenue, 1500, ' ₴');
-        updateTrendBadge('revenue-trend', totalRevenue, prevTotalRevenue);
+        animateCount(dashboardState.domElements.totalRevenue, currP.all.revenue, 1500, ' ₴');
+        updateTrendBadge('revenue-trend', currP.all.revenue, prevP.all.revenue);
         animateCount(dashboardState.domElements.revenuePortal, currP.numotamo.revenue, 1500, ' ₴');
         animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴');
 
