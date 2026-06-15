@@ -1168,25 +1168,11 @@ async function updateTopPromoters() {
     const pids = getPromoterIds();
     const key = ck('top_promoters', pids, start, end);
 
-    // Будуємо карту promoterId → назва орга з user_permissions
     const buildNameMap = async () => {
         const nameMap = {};
         try {
-            const { data: perms } = await supabaseClient.from('user_permissions').select('*');
-            if (perms && perms.length) {
-                // Автодетект поля з назвою (пробуємо типові варіанти)
-                const sample = perms[0];
-                const nameField = ['name', 'display_name', 'organizer_name', 'title', 'company', 'org_name', 'promoter_name']
-                    .find(f => sample[f] != null && typeof sample[f] === 'string');
-                if (nameField) {
-                    console.log(`[Promoters] Назва орга з поля: "${nameField}"`);
-                    perms.forEach(r => {
-                        if (r.promoter_id && r[nameField]) nameMap[String(r.promoter_id)] = r[nameField];
-                    });
-                } else {
-                    console.log('[Promoters] Поле з назвою не знайдено. Доступні поля:', Object.keys(sample));
-                }
-            }
+            const { data } = await supabaseClient.from('promoter_names').select('id, name');
+            (data || []).forEach(r => { nameMap[String(r.id)] = r.name; });
         } catch(e) { console.warn('[Promoters] nameMap error:', e); }
         return nameMap;
     };
@@ -1220,29 +1206,81 @@ async function updateTopPromoters() {
         const revenues   = sorted.map(p => Math.round(p.revenue));
         const peak = Math.max(...revenues);
 
+        const isMobile = window.innerWidth < 576;
+        const truncate = (str, n) => str.length > n ? str.slice(0, n) + '…' : str;
+        const mobileLabels = categories.map(c => truncate(c, 14));
+        const desktopLabels = categories.map(c => truncate(c, 24));
+
         const options = {
             series: [{ name: 'Дохід', data: revenues }],
-            chart: { type: 'bar', height: Math.max(280, sorted.length * 42), toolbar: { show: false }, fontFamily: 'Public Sans, serif' },
-            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%', dataLabels: { position: 'right' } } },
-            dataLabels: { enabled: true, formatter: v => v.toLocaleString('uk-UA') + ' ₴', offsetX: 8,
-                style: { fontSize: '11px', colors: ['var(--ds-gray-600)'], fontWeight: 500 } },
+            chart: {
+                type: 'bar',
+                height: Math.max(320, sorted.length * (isMobile ? 52 : 44)),
+                toolbar: { show: false },
+                fontFamily: 'Public Sans, serif'
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: true,
+                    borderRadius: 4,
+                    barHeight: isMobile ? '70%' : '60%',
+                    dataLabels: { position: isMobile ? 'center' : 'right' }
+                }
+            },
+            dataLabels: {
+                enabled: true,
+                formatter: v => (v / 1000).toFixed(0) + 'к ₴',
+                offsetX: isMobile ? 0 : 8,
+                style: {
+                    fontSize: isMobile ? '10px' : '11px',
+                    colors: [isMobile ? '#fff' : 'var(--ds-gray-600)'],
+                    fontWeight: 600
+                }
+            },
             colors: revenues.map(r => r === peak ? '#00a76f' : '#006c47'),
-            xaxis: { categories, labels: { formatter: v => (v/1000).toFixed(0) + 'к ₴', style: { fontSize: '11px' } } },
-            yaxis: { labels: { style: { fontSize: '12px' }, maxWidth: 160 } },
-            grid: { borderColor: 'var(--ds-gray-200)', strokeDashArray: 3, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+            xaxis: {
+                categories: isMobile ? mobileLabels : desktopLabels,
+                labels: { formatter: v => (v / 1000).toFixed(0) + 'к', style: { fontSize: '10px' } }
+            },
+            yaxis: {
+                labels: {
+                    style: { fontSize: isMobile ? '11px' : '12px' },
+                    maxWidth: isMobile ? 110 : 170
+                }
+            },
+            grid: {
+                borderColor: 'var(--ds-gray-200)',
+                strokeDashArray: 3,
+                xaxis: { lines: { show: true } },
+                yaxis: { lines: { show: false } }
+            },
             legend: { show: false },
-            tooltip: { y: { formatter: (v, { dataPointIndex }) => {
-                const d = sorted[dataPointIndex];
-                return `${v.toLocaleString('uk-UA')} ₴ · ${d.orders} замовлень · ${d.tickets} квитків`;
-            }}}
+            tooltip: {
+                y: { formatter: (v, { dataPointIndex }) => {
+                    const d = sorted[dataPointIndex];
+                    return `${v.toLocaleString('uk-UA')} ₴ · ${d.orders} замовлень · ${d.tickets} квитків`;
+                }},
+                x: { formatter: (_, { dataPointIndex }) => sorted[dataPointIndex].label }
+            },
+            responsive: [{
+                breakpoint: 576,
+                options: {
+                    chart: { height: Math.max(380, sorted.length * 52) },
+                    yaxis: { labels: { maxWidth: 110, style: { fontSize: '11px' } } }
+                }
+            }]
         };
 
         if (dashboardState.chartInstances['promotersChart']) {
             dashboardState.chartInstances['promotersChart'].updateOptions({
                 series: options.series,
-                xaxis: { categories },
+                xaxis: options.xaxis,
+                yaxis: options.yaxis,
+                dataLabels: options.dataLabels,
+                plotOptions: options.plotOptions,
                 colors: options.colors,
-                tooltip: options.tooltip
+                tooltip: options.tooltip,
+                chart: { height: options.chart.height }
             });
         } else {
             dashboardState.chartInstances['promotersChart'] = new ApexCharts(el, options);
@@ -1352,25 +1390,33 @@ async function updateAdvancedStats() {
     if (!pids) {
         try {
             const numoId = window.SELLER_IDS.NUMOTAMO;
-            const fetchNumoOrders = (s, e) => supabaseClient
-                .from('orders')
-                .select(`visit_date, ${FIELD_WITH_FEE}, ${FIELD_WITHOUT_FEE}`)
-                .gte('visit_date', s).lte('visit_date', e)
-                .eq('seller_id', numoId);
+            const selectFields = `order_id, seller_id, ${FIELD_WITH_FEE}, ${FIELD_WITHOUT_FEE}`;
 
-            const [currRes, prevRes] = await Promise.all([
-                fetchNumoOrders(start, end),
-                fetchNumoOrders(prevStart, prevEnd)
+            const [currRaw, prevRaw] = await Promise.all([
+                fetchAllOrders(null, start, end, selectFields),
+                fetchAllOrders(null, prevStart, prevEnd, selectFields)
             ]);
 
-            const currOrders = currRes.data || [];
-            const prevOrders = prevRes.data || [];
+            const dedupeNumo = (rows) => {
+                const seen = new Set();
+                return (rows || []).filter(r => {
+                    if (Number(r.seller_id) !== numoId) return false;
+                    if (r.order_id) {
+                        if (seen.has(r.order_id)) return false;
+                        seen.add(r.order_id);
+                    }
+                    return true;
+                });
+            };
+
+            const currOrders = dedupeNumo(currRaw);
+            const prevOrders = dedupeNumo(prevRaw);
 
             const calcFee = (rows) => rows.reduce((s, r) =>
                 s + Math.max(0, (parseFloat(r[FIELD_WITH_FEE]) || 0) - (parseFloat(r[FIELD_WITHOUT_FEE]) || 0)), 0);
 
-            const currFee  = calcFee(currOrders);
-            const prevFee  = calcFee(prevOrders);
+            const currFee   = calcFee(currOrders);
+            const prevFee   = calcFee(prevOrders);
             const currCount = currOrders.length;
             const prevCount = prevOrders.length;
 
