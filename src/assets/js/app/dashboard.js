@@ -1171,8 +1171,18 @@ async function updateTopPromoters() {
     const buildNameMap = async () => {
         const nameMap = {};
         try {
-            const { data } = await supabaseClient.from('promoter_names').select('id, name');
-            (data || []).forEach(r => { nameMap[String(r.id)] = r.name; });
+            let offset = 0;
+            const limit = 1000;
+            while (true) {
+                const { data, error } = await supabaseClient
+                    .from('promoter_names')
+                    .select('id, name')
+                    .range(offset, offset + limit - 1);
+                if (error || !data || data.length === 0) break;
+                data.forEach(r => { nameMap[String(r.id)] = r.name; });
+                if (data.length < limit) break;
+                offset += limit;
+            }
         } catch(e) { console.warn('[Promoters] nameMap error:', e); }
         return nameMap;
     };
