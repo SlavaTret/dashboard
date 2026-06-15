@@ -23,8 +23,10 @@ const dashboardState = {
         trafficGroupedObj: null,
         seoPerformanceChartObj: null,
         funnelChartObj: null,
-        myMapChart: null, // Для карти України ECharts
-        worldMap: null, // Для карти світу jsVectorMap
+        myMapChart: null,
+        worldMap: null,
+        promotersChart: null,
+        ordersByHourChart: null,
     },
     domElements: {} // Для кешування часто використовуваних DOM-елементів
 };
@@ -1078,6 +1080,9 @@ async function initDashboard() {
         if (!p || p.traffic_seo) { tasks.push(updateTrafficPerformance()); tasks.push(updateSEOCharts()); }
         if (!p || p.countries) tasks.push(updateCountryStats());
         if (!p || p.funnel) tasks.push(updateConversionFunnelChart());
+        tasks.push(updateTopPromoters());
+        tasks.push(updateOrdersByHour());
+        tasks.push(updateAdvancedStats());
 
         await Promise.all(tasks);
         syncTableHeights();
@@ -1151,6 +1156,258 @@ async function authenticateAndInit() {
     initDashboard();
     subscribeToOrders();
 
+}
+
+// ========================================================================= //
+// ТОП ПРОМОУТЕРИ ЗА ДОХОДОМ
+// ========================================================================= //
+async function updateTopPromoters() {
+    const el = document.querySelector('#promoters-chart');
+    if (!el) return;
+    const { start, end } = getDateRange();
+    const pids = getPromoterIds();
+    const key = ck('top_promoters', pids, start, end);
+
+    // Будуємо карту promoterId → назва орга з user_permissions
+    const buildNameMap = async () => {
+        const nameMap = {};
+        try {
+            const { data: perms } = await supabaseClient.from('user_permissions').select('*');
+            if (perms && perms.length) {
+                // Автодетект поля з назвою (пробуємо типові варіанти)
+                const sample = perms[0];
+                const nameField = ['name', 'display_name', 'organizer_name', 'title', 'company', 'org_name', 'promoter_name']
+                    .find(f => sample[f] != null && typeof sample[f] === 'string');
+                if (nameField) {
+                    console.log(`[Promoters] Назва орга з поля: "${nameField}"`);
+                    perms.forEach(r => {
+                        if (r.promoter_id && r[nameField]) nameMap[String(r.promoter_id)] = r[nameField];
+                    });
+                } else {
+                    console.log('[Promoters] Поле з назвою не знайдено. Доступні поля:', Object.keys(sample));
+                }
+            }
+        } catch(e) { console.warn('[Promoters] nameMap error:', e); }
+        return nameMap;
+    };
+
+    const render = (orders, nameMap = {}) => {
+        const numoId = window.SELLER_IDS.NUMOTAMO;
+        const grouped = {};
+        (orders || []).forEach(row => {
+            if (Number(row.seller_id) !== numoId) return;
+            const pid = String(row.promoterId || 'Невідомий');
+            if (!grouped[pid]) grouped[pid] = { revenue: 0, orders: 0 };
+            grouped[pid].revenue += parseFloat(row.subtotal_amount) || 0;
+            grouped[pid].orders += 1;
+        });
+
+        const sorted = Object.entries(grouped)
+            .map(([pid, d]) => ({ pid, label: nameMap[pid] || `#${pid}`, ...d }))
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10);
+
+        const countBadge = document.getElementById('promoters-count');
+        if (countBadge) countBadge.textContent = `${sorted.length} промоутерів`;
+
+        const categories = sorted.map(p => p.label);
+        const revenues   = sorted.map(p => Math.round(p.revenue));
+        const peak = Math.max(...revenues);
+
+        const options = {
+            series: [{ name: 'Дохід', data: revenues }],
+            chart: { type: 'bar', height: Math.max(280, sorted.length * 42), toolbar: { show: false }, fontFamily: 'Public Sans, serif' },
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%', dataLabels: { position: 'right' } } },
+            dataLabels: { enabled: true, formatter: v => v.toLocaleString('uk-UA') + ' ₴', offsetX: 8,
+                style: { fontSize: '11px', colors: ['var(--ds-gray-600)'], fontWeight: 500 } },
+            colors: revenues.map(r => r === peak ? '#00a76f' : '#006c47'),
+            xaxis: { categories, labels: { formatter: v => (v/1000).toFixed(0) + 'к ₴', style: { fontSize: '11px' } } },
+            yaxis: { labels: { style: { fontSize: '12px' }, maxWidth: 160 } },
+            grid: { borderColor: 'var(--ds-gray-200)', strokeDashArray: 3, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+            legend: { show: false },
+            tooltip: { y: { formatter: (v, { dataPointIndex }) =>
+                `${v.toLocaleString('uk-UA')} ₴ · ${sorted[dataPointIndex].orders} замовлень`
+            }}
+        };
+
+        if (dashboardState.chartInstances['promotersChart']) {
+            dashboardState.chartInstances['promotersChart'].updateOptions({ series: options.series, xaxis: { categories }, colors: options.colors });
+        } else {
+            dashboardState.chartInstances['promotersChart'] = new ApexCharts(el, options);
+            dashboardState.chartInstances['promotersChart'].render();
+        }
+    };
+
+    const cached = cacheGet(key);
+    if (cached) render(cached);
+
+    const [fresh, nameMap] = await Promise.all([
+        fetchAllOrders(pids, start, end, 'promoterId, subtotal_amount, seller_id'),
+        buildNameMap()
+    ]);
+    cacheSet(key, fresh);
+    render(fresh, nameMap);
+}
+
+// ========================================================================= //
+// ПІК ЗАМОВЛЕНЬ ПО ГОДИНАХ ДОБИ
+// ========================================================================= //
+async function updateOrdersByHour() {
+    const el = document.querySelector('#orders-by-hour-chart');
+    if (!el) return;
+    const { start, end } = getDateRange();
+    const pids = getPromoterIds();
+    const key = ck('orders_by_hour', pids, start, end);
+
+    const render = (orders) => {
+        const numoId = window.SELLER_IDS.NUMOTAMO;
+        const hours   = new Array(24).fill(0);
+        const revenue = new Array(24).fill(0);
+
+        (orders || []).forEach(row => {
+            if (!row.date_created || Number(row.seller_id) !== numoId) return;
+            const h = new Date(row.date_created).getHours();
+            if (h < 0 || h >= 24) return;
+            hours[h]++;
+            revenue[h] += parseFloat(row.subtotal_amount) || 0;
+        });
+
+        const peak  = Math.max(...hours);
+        const peakH = hours.indexOf(peak);
+        const peakLabel = document.getElementById('peak-hour-label');
+        if (peakLabel) peakLabel.textContent = peak > 0 ? `${peakH}:00 – ${peakH + 1}:00` : '—';
+
+        const categories = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+        const colors = hours.map((_, i) => i === peakH ? '#ff5630' : '#00a76f');
+
+        const options = {
+            series: [{ name: 'Замовлення', data: hours }],
+            chart: { type: 'bar', height: 260, toolbar: { show: false }, fontFamily: 'Public Sans, serif' },
+            plotOptions: { bar: { borderRadius: 4, distributed: true, columnWidth: '65%' } },
+            dataLabels: { enabled: false },
+            colors,
+            xaxis: { categories, labels: { style: { fontSize: '10px' }, rotate: -45, rotateAlways: true, hideOverlappingLabels: true }, tickAmount: 12 },
+            yaxis: { labels: { formatter: v => Math.round(v) } },
+            grid: { borderColor: 'var(--ds-gray-200)', strokeDashArray: 3 },
+            legend: { show: false },
+            tooltip: {
+                custom: ({ dataPointIndex }) => {
+                    const h = dataPointIndex;
+                    const cnt = hours[h];
+                    const rev = revenue[h];
+                    const revStr = rev > 0 ? `<div style="margin-top:4px;color:#00a76f;font-size:12px;">Сума: <b>${Math.round(rev).toLocaleString('uk-UA')} ₴</b></div>` : '';
+                    return `<div style="padding:10px 14px;font-family:inherit;">
+                        <div style="font-weight:600;margin-bottom:2px;">${h}:00 – ${h+1}:00</div>
+                        <div style="font-size:13px;">${cnt} замовлень</div>
+                        ${revStr}
+                    </div>`;
+                }
+            }
+        };
+
+        if (dashboardState.chartInstances['ordersByHourChart']) {
+            dashboardState.chartInstances['ordersByHourChart'].updateOptions({ series: options.series, colors, xaxis: { categories }, tooltip: options.tooltip });
+        } else {
+            dashboardState.chartInstances['ordersByHourChart'] = new ApexCharts(el, options);
+            dashboardState.chartInstances['ordersByHourChart'].render();
+        }
+    };
+
+    const cached = cacheGet(key);
+    if (cached) render(cached);
+
+    const fresh = await fetchAllOrders(pids, start, end, 'date_created, subtotal_amount, seller_id');
+    cacheSet(key, fresh);
+    render(fresh);
+}
+
+// ========================================================================= //
+// ДОХІД НА ВІДВІДУВАЧА + СЕРЕДНІЙ ЧАС ПІДТВЕРДЖЕННЯ
+// ========================================================================= //
+async function updateAdvancedStats() {
+    const { start, end, prevStart, prevEnd } = getDateRange();
+    const pids = getPromoterIds();
+
+    // === Блоки тільки для адміна (users без promoter_id) ===
+    if (pids) {
+        ['block-rev-per-visitor', 'block-top-promoters'].forEach(id => {
+            const bl = document.getElementById(id); if (bl) bl.classList.add('d-none');
+        });
+    }
+    // TODO: вкажи назви полів — сума З сервісним збором і БЕЗ нього
+    const FIELD_WITH_FEE    = 'total_amount';    // сума з сервісним збором
+    const FIELD_WITHOUT_FEE = 'subtotal_amount'; // сума без сервісного збору
+    if (!pids) {
+        try {
+            const numoId = window.SELLER_IDS.NUMOTAMO;
+            const fetchNumoOrders = (s, e) => supabaseClient
+                .from('orders')
+                .select(`visit_date, ${FIELD_WITH_FEE}, ${FIELD_WITHOUT_FEE}`)
+                .gte('visit_date', s).lte('visit_date', e)
+                .eq('seller_id', numoId);
+
+            const [currRes, prevRes] = await Promise.all([
+                fetchNumoOrders(start, end),
+                fetchNumoOrders(prevStart, prevEnd)
+            ]);
+
+            const currOrders = currRes.data || [];
+            const prevOrders = prevRes.data || [];
+
+            const calcFee = (rows) => rows.reduce((s, r) =>
+                s + Math.max(0, (parseFloat(r[FIELD_WITH_FEE]) || 0) - (parseFloat(r[FIELD_WITHOUT_FEE]) || 0)), 0);
+
+            const currFee  = calcFee(currOrders);
+            const prevFee  = calcFee(prevOrders);
+            const currCount = currOrders.length;
+            const prevCount = prevOrders.length;
+
+            const rpv     = currCount > 0 ? Math.round(currFee / currCount) : 0;
+            const prevRpv = prevCount > 0 ? Math.round(prevFee / prevCount) : 0;
+
+            animateCount(document.getElementById('rev-per-visitor'), rpv, 1000, ' ₴');
+            updateTrendBadge('rev-per-visitor-trend', rpv, prevRpv);
+            animateCount(document.getElementById('rpv-total-revenue'), Math.round(currFee), 1000, ' ₴');
+            animateCount(document.getElementById('rpv-total-users'), currCount);
+        } catch (e) { console.error('updateAdvancedStats RPV:', e); }
+    }
+
+    // === Середній час підтвердження (оплата) ===
+    try {
+        const formatSecs = (sec) => {
+            if (sec < 60) return `${sec} сек`;
+            const m = Math.floor(sec / 60), s = sec % 60;
+            if (m < 60) return s > 0 ? `${m} хв ${s} сек` : `${m} хв`;
+            const h = Math.floor(m / 60), rm = m % 60;
+            return rm > 0 ? `${h} год ${rm} хв` : `${h} год`;
+        };
+
+        // fetchAllOrders з пагінацією — отримуємо всі записи за період
+        const confirmOrders = await fetchAllOrders(pids, start, end, 'date_created, date_confirmed');
+
+        // diff у секундах
+        const diffs = (confirmOrders || [])
+            .filter(r => r.date_created && r.date_confirmed)
+            .map(r => Math.round((new Date(r.date_confirmed) - new Date(r.date_created)) / 1000))
+            .filter(d => d > 0 && d < 60 * 60 * 24 * 30);
+
+        const avgSec = diffs.length > 0 ? Math.round(diffs.reduce((s, d) => s + d, 0) / diffs.length) : 0;
+        const minSec = diffs.length > 0 ? Math.min(...diffs) : 0;
+
+        const timeEl = document.getElementById('avg-confirm-time');
+        if (timeEl) timeEl.textContent = avgSec > 0 ? formatSecs(avgSec) : '—';
+
+        const minEl = document.getElementById('confirm-min-time');
+        if (minEl) minEl.textContent = minSec > 0 ? formatSecs(minSec) : '—';
+
+        const badge = document.getElementById('confirm-time-badge');
+        if (badge) {
+            const label = avgSec < 60 ? 'Миттєво' : avgSec < 600 ? 'Швидко' : avgSec < 3600 ? 'Нормально' : 'Повільно';
+            const cls   = avgSec < 60 ? 'bg-success-subtle text-success' : avgSec < 600 ? 'bg-info-subtle text-info' : avgSec < 3600 ? 'bg-warning-subtle text-warning' : 'bg-danger-subtle text-danger';
+            badge.textContent = label; badge.className = `badge small ${cls}`;
+        }
+        animateCount(document.getElementById('confirm-count'), diffs.length);
+    } catch (e) { console.error('updateAdvancedStats confirmTime:', e); }
 }
 
 function syncTableHeights() {

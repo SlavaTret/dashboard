@@ -267,6 +267,100 @@
           </div>
         </div>
 
+        <!-- ===== Топ промоутери + Дохід на відвідувача + Час підтвердження ===== -->
+        <div class="row g-6 mb-6 mt-2">
+          <div id="block-top-promoters" class="col-xl-8 col-12">
+            <div class="card card-lg h-100">
+              <div class="card-header border-bottom-0 d-flex align-items-center justify-content-between">
+                <h5 class="mb-0">Топ промоутери за доходом</h5>
+                <span id="promoters-count" class="badge bg-primary-subtle text-primary small"></span>
+              </div>
+              <div class="card-body pt-2">
+                <div id="promoters-chart" style="min-height: 300px;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-xl-4 col-12 d-flex flex-column gap-6">
+            <!-- Дохід на одного відвідувача -->
+            <div id="block-rev-per-visitor" class="card card-lg flex-fill">
+              <div class="card-body d-flex flex-column gap-6">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="icon-shape icon-lg rounded-circle bg-success-darker text-success-lighter">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                  </div>
+                  <div>
+                    <div class="fw-semibold">Дохід на відвідувача</div>
+                    <div class="text-secondary small">Сервісний збір Numotamo / замовлення</div>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-end">
+                  <div id="rev-per-visitor" class="fs-2 fw-bold lh-1">0 ₴</div>
+                  <div id="rev-per-visitor-trend" class="small">0%</div>
+                </div>
+                <div class="pt-3 border-top border-dashed row g-0">
+                  <div class="col-6 border-end border-dashed px-1 text-center">
+                    <span class="text-secondary small d-block mb-1">Сервісний збір</span>
+                    <h6 id="rpv-total-revenue" class="mb-0 fw-bold">0 ₴</h6>
+                  </div>
+                  <div class="col-6 px-3 text-center">
+                    <span class="text-secondary small d-block mb-1">Замовлень</span>
+                    <h6 id="rpv-total-users" class="mb-0 fw-bold">0</h6>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Середній час підтвердження -->
+            <div id="block-confirm-time" class="card card-lg flex-fill">
+              <div class="card-body d-flex flex-column gap-6">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="icon-shape icon-lg rounded-circle bg-warning-darker text-warning-lighter">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                  </div>
+                  <div>
+                    <div class="fw-semibold">Час підтвердження</div>
+                    <div class="text-secondary small">Середній час до підтвердження</div>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-end">
+                  <div id="avg-confirm-time" class="fs-2 fw-bold lh-1">—</div>
+                  <span id="confirm-time-badge" class="badge bg-success-subtle text-success small"></span>
+                </div>
+                <div class="pt-3 border-top border-dashed row g-0">
+                  <div class="col-6 border-end border-dashed px-1 text-center">
+                    <span class="text-secondary small d-block mb-1">Замовлень</span>
+                    <h6 id="confirm-count" class="mb-0 fw-bold">0</h6>
+                  </div>
+                  <div class="col-6 px-3 text-center">
+                    <span class="text-secondary small d-block mb-1">Мінімум</span>
+                    <h6 id="confirm-min-time" class="mb-0 fw-bold">—</h6>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Пік замовлень по годинах ===== -->
+        <div class="row g-6 mb-6">
+          <div id="block-orders-by-hour" class="col-12">
+            <div class="card card-lg">
+              <div class="card-body d-flex flex-column gap-4">
+                <div class="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <h5 class="mb-1">Пік замовлень по годинах доби</h5>
+                    <p class="text-secondary small mb-0 d-none d-md-block">Кількість замовлень за кожну годину доби за обраний період</p>
+                  </div>
+                  <div class="text-end flex-shrink-0">
+                    <div class="text-secondary small">Пікова година</div>
+                    <div id="peak-hour-label" class="fw-bold text-danger text-nowrap">—</div>
+                  </div>
+                </div>
+                <div id="orders-by-hour-chart" style="min-height: 260px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="row g-6 mb-6">
           <div id="block-gender" class="col-xl-4 col-12">
             <div class="card card-lg h-100">
