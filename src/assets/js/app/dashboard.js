@@ -296,14 +296,19 @@ async function updateSalesStats() {
         dashboardState.domElements.revenuePortal = dashboardState.domElements.revenuePortal || document.getElementById('revenue-portal');
         dashboardState.domElements.revenueGa = dashboardState.domElements.revenueGa || document.getElementById('revenue-ga');
 
-        animateCount(dashboardState.domElements.totalOrders, currP.all.orders);
-        updateTrendBadge('orders-trend', currP.all.orders, prevP.all.orders); // 'orders-trend' залишається ID
-        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders); // Numotamo
-        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders); // Karabas + MTicket + Internet-Bilet + Інші
-        animateCount(dashboardState.domElements.totalRevenue, currP.all.revenue, 1500, ' ₴');
-        updateTrendBadge('revenue-trend', currP.all.revenue, prevP.all.revenue); // 'revenue-trend' залишається ID
+        const totalOrders  = currP.numotamo.orders  + currP.karabas.orders  + currP.mticket.orders  + currP.internet_bilet.orders  + currP.others.orders;
+        const totalRevenue = currP.numotamo.revenue + currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue;
+        const prevTotalOrders  = prevP.numotamo.orders  + prevP.karabas.orders  + prevP.mticket.orders  + prevP.internet_bilet.orders  + prevP.others.orders;
+        const prevTotalRevenue = prevP.numotamo.revenue + prevP.karabas.revenue + prevP.mticket.revenue + prevP.internet_bilet.revenue + prevP.others.revenue;
+
+        animateCount(dashboardState.domElements.totalOrders, totalOrders);
+        updateTrendBadge('orders-trend', totalOrders, prevTotalOrders);
+        animateCount(dashboardState.domElements.ordersPortal, currP.numotamo.orders);
+        animateCount(dashboardState.domElements.ordersGa, currP.karabas.orders + currP.mticket.orders + currP.internet_bilet.orders + currP.others.orders);
+        animateCount(dashboardState.domElements.totalRevenue, totalRevenue, 1500, ' ₴');
+        updateTrendBadge('revenue-trend', totalRevenue, prevTotalRevenue);
         animateCount(dashboardState.domElements.revenuePortal, currP.numotamo.revenue, 1500, ' ₴');
-        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴'); // Karabas + MTicket + Internet-Bilet + Інші
+        animateCount(dashboardState.domElements.revenueGa, currP.karabas.revenue + currP.mticket.revenue + currP.internet_bilet.revenue + currP.others.revenue, 1500, ' ₴');
 
     } catch (err) { console.error("❌ Помилка завантаження фінансової статистики:", err); }
 }
