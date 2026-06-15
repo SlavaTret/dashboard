@@ -1194,12 +1194,18 @@ async function updateTopPromoters() {
     const render = (orders, nameMap = {}) => {
         const numoId = window.SELLER_IDS.NUMOTAMO;
         const grouped = {};
+        const seenOrders = new Set();
         (orders || []).forEach(row => {
             if (Number(row.seller_id) !== numoId) return;
             const pid = String(row.promoterId || 'Невідомий');
-            if (!grouped[pid]) grouped[pid] = { revenue: 0, orders: 0 };
+            if (!grouped[pid]) grouped[pid] = { revenue: 0, orders: 0, tickets: 0 };
+            // Рахуємо дохід і кількість тільки один раз на order_id
+            const oid = row.order_id;
+            if (oid && seenOrders.has(oid)) return;
+            if (oid) seenOrders.add(oid);
             grouped[pid].revenue += parseFloat(row.subtotal_amount) || 0;
             grouped[pid].orders += 1;
+            grouped[pid].tickets += parseInt(row.tickets_count) || 0;
         });
 
         const sorted = Object.entries(grouped)
@@ -1225,13 +1231,19 @@ async function updateTopPromoters() {
             yaxis: { labels: { style: { fontSize: '12px' }, maxWidth: 160 } },
             grid: { borderColor: 'var(--ds-gray-200)', strokeDashArray: 3, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
             legend: { show: false },
-            tooltip: { y: { formatter: (v, { dataPointIndex }) =>
-                `${v.toLocaleString('uk-UA')} ₴ · ${sorted[dataPointIndex].orders} замовлень`
-            }}
+            tooltip: { y: { formatter: (v, { dataPointIndex }) => {
+                const d = sorted[dataPointIndex];
+                return `${v.toLocaleString('uk-UA')} ₴ · ${d.orders} замовлень · ${d.tickets} квитків`;
+            }}}
         };
 
         if (dashboardState.chartInstances['promotersChart']) {
-            dashboardState.chartInstances['promotersChart'].updateOptions({ series: options.series, xaxis: { categories }, colors: options.colors });
+            dashboardState.chartInstances['promotersChart'].updateOptions({
+                series: options.series,
+                xaxis: { categories },
+                colors: options.colors,
+                tooltip: options.tooltip
+            });
         } else {
             dashboardState.chartInstances['promotersChart'] = new ApexCharts(el, options);
             dashboardState.chartInstances['promotersChart'].render();
@@ -1242,7 +1254,7 @@ async function updateTopPromoters() {
     if (cached) render(cached);
 
     const [fresh, nameMap] = await Promise.all([
-        fetchAllOrders(pids, start, end, 'promoterId, subtotal_amount, seller_id'),
+        fetchAllOrders(pids, start, end, 'order_id, promoterId, subtotal_amount, seller_id, tickets_count'),
         buildNameMap()
     ]);
     cacheSet(key, fresh);
