@@ -1266,6 +1266,7 @@ async function updateTopPromoters() {
             },
             legend: { show: false },
             tooltip: {
+                fixed: isMobile ? { enabled: true, position: 'topRight', offsetY: 10, offsetX: -10 } : { enabled: false },
                 y: { formatter: (v, { dataPointIndex }) => {
                     const d = sorted[dataPointIndex];
                     return `${v.toLocaleString('uk-UA')} ₴ · ${d.orders} замовлень · ${d.tickets} квитків`;
