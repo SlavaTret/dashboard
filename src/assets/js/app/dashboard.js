@@ -761,19 +761,37 @@ async function updateTopEventsTable() {
         const pids = getPromoterIds();
         const key = ck('top_events', pids, start, end);
 
+        const numoId = window.SELLER_IDS.NUMOTAMO;
+
         const processData = (data) => {
             const eventsMap = (data || []).reduce((acc, order) => {
                 const name = order.title ? order.title.trim() : 'Невідома подія';
-                if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0 };
-                acc[name].tickets += parseInt(order.tickets_count) || 0;
-                acc[name].totalRevenue += parseFloat(order.subtotal_amount) || 0;
+                if (!acc[name]) acc[name] = { tickets: 0, totalRevenue: 0, numoTickets: 0, numoRevenue: 0 };
+                const t = parseInt(order.tickets_count) || 0;
+                const r = parseFloat(order.subtotal_amount) || 0;
+                acc[name].tickets += t;
+                acc[name].totalRevenue += r;
+                if (Number(order.seller_id) === numoId) {
+                    acc[name].numoTickets += t;
+                    acc[name].numoRevenue += r;
+                }
                 return acc;
             }, {});
             return Object.entries(eventsMap).map(([title, stats]) => ({ title, ...stats })).sort((a, b) => b.tickets - a.tickets).slice(0, 25);
         };
 
         const renderTopEvents = (topEvents) => {
-            tbody.innerHTML = topEvents.map(event => `<tr><td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${event.title}</span></td><td>${event.tickets} шт.</td><td class="fw-bold">${event.totalRevenue.toLocaleString('uk-UA')} ₴</td></tr>`).join('');
+            tbody.innerHTML = topEvents.map(event => {
+                const numoTicketStr = event.numoTickets > 0
+                    ? ` <span class="text-muted small">(${event.numoTickets})</span>` : '';
+                const numoRevStr = event.numoRevenue > 0
+                    ? ` <span class="text-muted small">(${Math.round(event.numoRevenue).toLocaleString('uk-UA')})</span>` : '';
+                return `<tr>
+                    <td class="text-truncate" style="max-width: 220px;"><span class="fw-semibold">${event.title}</span></td>
+                    <td class="text-nowrap">${event.tickets}${numoTicketStr} шт.</td>
+                    <td class="fw-bold text-nowrap">${Math.round(event.totalRevenue).toLocaleString('uk-UA')}${numoRevStr} ₴</td>
+                </tr>`;
+            }).join('');
         };
 
         // Показати скелетон поки нема даних
@@ -783,7 +801,7 @@ async function updateTopEventsTable() {
         if (cached) {
             renderTopEvents(cached);
             // Тихе оновлення у фоні
-            fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count').then(fresh => {
+            fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count, seller_id').then(fresh => {
                 const topEvents = processData(fresh);
                 cacheSet(key, topEvents);
                 renderTopEvents(topEvents);
@@ -791,7 +809,7 @@ async function updateTopEventsTable() {
             return;
         }
 
-        const data = await fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count');
+        const data = await fetchAllOrders(pids, start, end, 'title, subtotal_amount, tickets_count, seller_id');
         const topEvents = processData(data);
         cacheSet(key, topEvents);
         renderTopEvents(topEvents);
